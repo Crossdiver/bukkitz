@@ -1,3 +1,12 @@
+
+/**
+ * Module dependencies.
+ */
+
+var express = require('express')
+  , routes = require('./routes')
+
+var app = module.exports = express.createServer();
 var http  = require('http');
 var redis = require("redis"),
     client = redis.createClient();
@@ -6,6 +15,27 @@ var $ = require('jquery');
 var bukkit_latest = [];
 var bukkit_alphabetical = [];
 var bukkit_changed = [];
+
+// Configuration
+
+app.configure(function(){
+  app.set('views', __dirname + '/views');
+  app.set('view engine', 'jade');
+  app.use(express.bodyParser());
+  app.use(express.methodOverride());
+  app.use(app.router);
+  app.use(express.static(__dirname + '/public'));
+});
+
+app.configure('development', function(){
+  app.use(express.errorHandler({ dumpExceptions: true, showStack: true })); 
+});
+
+app.configure('production', function(){
+  app.use(express.errorHandler()); 
+});
+
+// Bukkit Scraper Logic
 
 // check if an element exists in array using a comparer function
 // comparer : function(currentElement)
@@ -24,42 +54,28 @@ Array.prototype.pushIfNotExist = function(element, comparer) {
     }
 }; 
 
+function sendUpdates(l) {
+  console.log(l);
+}
+
+
 function checkUpdates() {
-    var l, a;
 
     // Get Latest list
-    jsdom.env({
-      html: 'http://bukk.it/?C=M;O=D',
-      scripts: [
-        'http://code.jquery.com/jquery-1.5.min.js'
-      ],
-      done: function(errors, window) {
-        l = [];
-        var $ = window.$;
-        console.log('HN Links');
-        $('td a').each(function() {
-          l.push('http://bukk.it/' + $(this).text());
-        });
-        $.grep(bukkit_latest, function(el){
-            bukkit_changed = $.inArray(el, l) == -1;
-        });
-        console.log(l);
-        console.log('new items: ' + bukkit_changed);
-      }
-    });
-
-    // Get Alphabetical list
     jsdom.env({
       html: 'http://bukk.it/',
       scripts: [
         'http://code.jquery.com/jquery-1.5.min.js'
       ],
       done: function(errors, window) {
-        a = [];
-        var $ = window.$;
-        console.log('HN Links');
-        $('td a').each(function() {
-          a.push('http://bukk.it/' + $(this).text());
+        var g = client.incr('generation_count', function(err, g){
+          l = [];
+          var $ = window.$;
+          $('td a').each(function() {
+            client.zadd('bukkitz', g, $(this).text());
+            console.log(g);
+          });
+          sendUpdates(client.zrange('bukkitz', g, g));
         });
       }
     });
@@ -67,3 +83,9 @@ function checkUpdates() {
 
 checkUpdates();
 
+// Routes
+
+app.get('/', routes.index);
+
+app.listen(5000);
+console.log("Express server listening on port %d in %s mode", app.address().port, app.settings.env);
